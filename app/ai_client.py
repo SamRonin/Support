@@ -20,6 +20,7 @@ import time
 import httpx
 
 from . import config
+from .lang import lang_fa
 
 log = logging.getLogger("ai")
 
@@ -50,17 +51,43 @@ class AIError(Exception):
     """Raised when every model attempt failed."""
 
 
-def build_system_prompt(bot_title: str | None, knowledge: str) -> str:
+def build_system_prompt(
+    bot_title: str | None, knowledge: str, user_language: str | None = None
+) -> str:
+    """System prompt for the support assistant.
+
+    ``user_language``: detected language NAME of the customer's message.
+    When known, the prompt hard-pins the reply language in BOTH English and
+    Persian (models comply far more reliably when the language is named
+    explicitly than with a generic "match the user's language" rule).
+    """
     title = bot_title or "این کسب‌وکار"
+    if user_language:
+        fa = lang_fa(user_language)
+        lang_rule = (
+            "0. (قانون طلایی) زبان پیام این مشتری: "
+            f"«{user_language}» ({fa}). "
+            f"LANGUAGE RULE (CRITICAL): Reply ONLY in {user_language} — 100% of the answer "
+            f"must be written in {user_language}. Even if the business info or the previous "
+            f"conversation is in another language, your answer MUST still be in {user_language} "
+            f"({fa}). If the customer switches language, you switch immediately too. "
+            "هرگز به زبان دیگری جواب نده؛ حتی یک جمله هم به زبان دیگر اضافه نکن."
+        )
+    else:
+        lang_rule = (
+            "0. (قانون طلایی) همیشه دقیقاً به همان زبانی جواب بده که مشتری با آن نوشته "
+            "(RESPOND IN THE EXACT LANGUAGE OF THE CUSTOMER'S LAST MESSAGE). "
+            "اگر مشتری زبانش را عوض کند، تو هم همان لحظه زبانت را عوض کن."
+        )
     return (
         "تو دستیار پشتیبانی مشتریان هستی و در تلگرام داری به پیام‌های مشتریان "
         f"«{title}» جواب می‌دهی؛ طوری جواب بده که انگار خود ادمینِ این کسب‌وکار داری جواب می‌دهی.\n"
         "قوانین پاسخ‌گویی:\n"
-        "1. همیشه به زبان پیام کاربر جواب بده (فارسی، فارسی؛ انگلیسی، انگلیسی).\n"
-        "2. فقط بر اساس «اطلاعات کسب‌وکار» جواب بده و چیزی از خودت نساز.\n"
-        "3. اگر جواب را نمی‌دانی یا اطلاعات کافی نیست، محترمانه بگو که پیامش برای ادمین ارسال شد و به‌زودی پیگیری می‌شود. قیمت و قول دقیق از خودت درنیاور.\n"
-        "4. جواب‌ها کوتاه، دوستانه و حرفه‌ای باشند (معمولاً ۱ تا ۴ جمله) و بدون هدینگ و لیست طولانی.\n"
-        "5. هرگز نگو که تو ربات یا هوش مصنوعی هستی؛ تو کارمند پشتیبانی هستی.\n\n"
+        f"{lang_rule}\n"
+        "1. فقط بر اساس «اطلاعات کسب‌وکار» جواب بده و چیزی از خودت نساز.\n"
+        "2. اگر جواب را نمی‌دانی یا اطلاعات کافی نیست، محترمانه بگو که پیامش برای ادمین ارسال شد و به‌زودی پیگیری می‌شود. قیمت و قول دقیق از خودت درنیاور.\n"
+        "3. جواب‌ها کوتاه، دوستانه و حرفه‌ای باشند (معمولاً ۱ تا ۴ جمله) و بدون هدینگ و لیست طولانی.\n"
+        "4. هرگز نگو که تو ربات یا هوش مصنوعی هستی؛ تو کارمند پشتیبانی هستی.\n\n"
         f"اطلاعات کسب‌وکار:\n{knowledge if knowledge.strip() else '(اطلاعاتی ثبت نشده؛ محتاط و کلی جواب بده و وعده دقیق نده.)'}"
     )
 

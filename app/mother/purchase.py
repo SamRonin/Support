@@ -127,7 +127,7 @@ async def cb_approve(cb: CallbackQuery) -> None:
         )
     except Exception:
         pass
-    await cb.answer(texts.ADMIN_REJECTED_FEEDBACK)
+    await cb.answer(texts.ADMIN_DONE)
 
     from ..child import manager
 

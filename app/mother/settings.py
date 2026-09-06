@@ -396,9 +396,9 @@ async def cb_delete_ask(cb: CallbackQuery) -> None:
 
 
 # ------------------------------------------------------------------ dialog text input
-def _expired(message: Message) -> bool:
+async def _expired(message: Message) -> bool:
     """Dialog vanished (TTL or restart) — tell the user instead of ignoring."""
-    message.answer(texts.DIALOG_EXPIRED)
+    await message.answer(texts.DIALOG_EXPIRED)
     return True
 
 
@@ -406,7 +406,7 @@ def _expired(message: Message) -> bool:
 async def msg_photo(message: Message) -> None:
     d = store.get(message.from_user.id)
     if not d:
-        _expired(message)
+        await _expired(message)
         return
     row = await repo.get_bot(d.bot_id)
     if not row:
@@ -442,7 +442,7 @@ async def msg_photo(message: Message) -> None:
 async def msg_title(message: Message) -> None:
     d = store.get(message.from_user.id)
     if not d:
-        _expired(message)
+        await _expired(message)
         return
     row = await repo.get_bot(d.bot_id)
     title = (message.text or "").strip()
@@ -467,7 +467,7 @@ async def msg_title(message: Message) -> None:
 async def msg_bio(message: Message) -> None:
     d = store.get(message.from_user.id)
     if not d:
-        _expired(message)
+        await _expired(message)
         return
     row = await repo.get_bot(d.bot_id)
     bio = (message.text or "").strip()
@@ -491,7 +491,7 @@ async def msg_bio(message: Message) -> None:
 async def msg_desc(message: Message) -> None:
     d = store.get(message.from_user.id)
     if not d:
-        _expired(message)
+        await _expired(message)
         return
     row = await repo.get_bot(d.bot_id)
     desc = (message.text or "").strip()
@@ -515,7 +515,7 @@ async def msg_desc(message: Message) -> None:
 async def msg_knowledge(message: Message) -> None:
     d = store.get(message.from_user.id)
     if not d:
-        _expired(message)
+        await _expired(message)
         return
     row = await repo.get_bot(d.bot_id)
     if not row:
@@ -544,7 +544,7 @@ async def msg_knowledge(message: Message) -> None:
 async def msg_welcome(message: Message) -> None:
     d = store.get(message.from_user.id)
     if not d:
-        _expired(message)
+        await _expired(message)
         return
     owner = await repo.get_user(message.from_user.id)
     if not repo.is_pro_row(owner):
@@ -564,7 +564,7 @@ async def msg_welcome(message: Message) -> None:
 async def msg_channel_add(message: Message) -> None:
     d = store.get(message.from_user.id)
     if not d:
-        _expired(message)
+        await _expired(message)
         return
     row = await repo.get_bot(d.bot_id)
     if not row:

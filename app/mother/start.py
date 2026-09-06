@@ -31,7 +31,10 @@ async def _send_menu(message: Message, user_id: int) -> None:
             bot_count=len(bots),
             max_bots=max_bots,
         ),
-        reply_markup=keyboards.main_menu(has_bots=bool(bots), can_create=can_create),
+        reply_markup=keyboards.main_menu(
+            has_bots=bool(bots), can_create=can_create,
+            is_admin=config.is_admin(user_id),
+        ),
     )
 
 
@@ -99,7 +102,10 @@ async def cb_menu(cb: CallbackQuery) -> None:
             bot_count=len(bots),
             max_bots=max_bots,
         ),
-        reply_markup=keyboards.main_menu(has_bots=bool(bots), can_create=can_create),
+        reply_markup=keyboards.main_menu(
+            has_bots=bool(bots), can_create=can_create,
+            is_admin=config.is_admin(cb.from_user.id),
+        ),
     )
 
 

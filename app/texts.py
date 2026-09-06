@@ -214,7 +214,7 @@ CANCELLED = "❌ عملیات لغو شد."
 TOO_SOON = "⏳ کمی آهسته‌تر! لطفاً چند لحظه صبر کن."
 BANNED = "🚫 دسترسی شما به این ربات مسدود شده است."
 
-ADMIN_REJECTED_FEEDBACK = "✅ انجام شد."
+ADMIN_DONE = "✅ انجام شد."
 INVALID_TOKEN = "⚠️ توکن نامعتبره! دوباره چک کن و توکن کامل رو بفرست."
 TOKEN_CHECK_FAILED = (
     "🔌 ارتباط با تلگرام برقرار نشد (مشکل شبکه موقت). لطفاً چند لحظه بعد "
@@ -244,3 +244,100 @@ SET_OK = "✅ با موفقیت تغییر کرد."
 PHOTO_SET_OK = "✅ عکس با موفقیت تغییر کرد."
 PHOTO_REMOVED = "🗑 عکس حذف شد."
 SET_FAIL = "⚠️ تغییر انجام نشد! احتمالاً محدودیت تلگرام (طول متن یا فرمت عکس) رعایت نشده. دوباره تلاش کن."
+
+# ------------------------------------------------------------------ admin panel
+ADMIN_ONLY = "⛔ این بخش فقط برای ادمین ربات است."
+
+ADMIN_DASHBOARD = (
+    "🛡 <b>پنل مدیریت</b>\n\n"
+    "👥 <b>کاربران:</b> {users_total} (امروز: +{users_today} | این هفته: +{users_week})\n"
+    "💎 پرو فعال: <b>{users_pro}</b>\n"
+    "🚫 بن‌شده: <b>{users_banned}</b>\n\n"
+    "🤖 <b>ربات‌ها:</b> {bots_total} (فعال: {bots_active} | غیرفعال: {bots_off})\n\n"
+    "💳 <b>پرداخت‌ها:</b> در انتظار {pays_pending} | تاییدشده {pays_approved} | ردشده {pays_rejected}\n"
+    "💰 درآمد تاییدشده: <b>{revenue:,} تومان</b>\n\n"
+    "💬 پیام‌های هوش مصنوعی این ماه: <b>{usage_month:,}</b>\n"
+    "🎁 دعوت‌های ثبت‌شده: {referrals_total}\n\n"
+    "چه کاری انجام بدهم؟"
+)
+
+ADMIN_USERS_TITLE = "👥 <b>کاربران</b> — صفحه {page} از {pages} (مجموع: {total})\n\n{rows}"
+
+ADMIN_USER_DETAIL = (
+    "👤 <b>{name}</b>{username}\n"
+    "🆔 آیدی عددی: <code>{user_id}</code>\n\n"
+    "💎 اشتراک: {plan}\n"
+    "🚖 بن: {banned}\n"
+    "🤖 ربات‌ها: <b>{bots}</b>\n"
+    "💬 پیام‌های AI این ماه: <b>{usage}</b>\n"
+    "💳 پرداخت‌ها: <b>{pays_total}</b> (تایید {pays_ok} | در انتظار {pays_pending})\n"
+    "🎁 دعوت از دیگران: <b>{referrals}</b> نفر\n"
+    "📅 عضویت: {created}\n"
+    "{bots_line}"
+)
+
+ADMIN_BOTS_TITLE = "🤖 <b>ربات‌ها</b> — صفحه {page} از {pages} (مجموع: {total})\n\n{rows}"
+
+ADMIN_BOT_DETAIL = (
+    "🤖 <b>{title}</b> — @{username}\n\n"
+    "🆔 شناسه: <code>#{bot_id}</code>\n"
+    "👤 مالک: {owner_name} {owner_username} (<code>{owner_id}</code>)\n"
+    "⚡ وضعیت: {status} | خطاها: {errors}\n"
+    "🧠 دانش: {knowledge} کاراکتر\n"
+    "🤖 مدل: {model}\n"
+    "📢 چنل‌ها: {channels}\n"
+    "💬 پیام‌های این ماه: <b>{usage}</b>\n"
+    "📅 ساخته‌شده: {created}"
+)
+
+ADMIN_PAYS_TITLE = (
+    "💳 <b>پرداخت‌ها</b> — {filter_label} — صفحه {page} از {pages} (مجموع: {total})\n\n{rows}"
+)
+
+ADMIN_BROADCAST_ASK = (
+    "📣 <b>پیام همگانی</b>\n\n"
+    "متنی رو بفرست که به <b>همه کاربران</b> (به‌جز بن‌شده‌ها) ارسال بشه.\n"
+    "می‌تونی از فرمت HTML استفاده کنی (مثل <b>بولد</b>).\n\n"
+    "برای انصراف /cancel رو بزن."
+)
+
+ADMIN_BROADCAST_CONFIRM = (
+    "📣 <b>پیش‌نمایش پیام همگانی</b>\n\n"
+    "👥 دریافت‌کنندگان: <b>{count}</b> کاربر\n\n"
+    "ــــــــــــــــــــ\n{text}\nــــــــــــــــــــ\n\n"
+    "ارسال بشه؟"
+)
+
+ADMIN_BROADCAST_DONE = (
+    "📣 <b>پیام همگانی ارسال شد!</b>\n\n"
+    "✅ موفق: <b>{ok}</b>\n"
+    "❌ ناموفق (بلاک/عدم دسترسی): <b>{fail}</b>"
+)
+
+ADMIN_FIND_ASK = (
+    "🔍 <b>جستجوی کاربر</b>\n\n"
+    "آیدی عددی یا یوزرنیم کاربر رو بفرست (مثل <code>123456789</code> یا <code>@username</code>).\n\n"
+    "برای انصراف /cancel رو بزن."
+)
+
+ADMIN_USER_NOT_FOUND = "🔍 کاربری با این مشخصات پیدا نشد!"
+
+ADMIN_GRANT_ASK = (
+    "💎 <b>هدیه پرو</b> برای <b>{name}</b> (<code>{user_id}</code>)\n\n"
+    "چند روز پرو فعال بشه؟ عدد روز رو بفرست (۱ تا ۳۶۵۰).\n"
+    "مثال: <code>30</code>\n\n"
+    "برای انصراف /cancel رو بزن."
+)
+
+ADMIN_GRANT_DONE = (
+    "✅ <b>{days} روز پرو</b> به {name} داده شد (تا {until}).\n"
+    "به کاربر هم اطلاع داده شد."
+)
+
+ADMIN_BAN_CONFIRM = (
+    "🚫 <b>{name}</b> (<code>{user_id}</code>) بن بشه؟\n\n"
+    "کاربر بن‌شده دیگه نمی‌تونه از ربات مادر استفاده کنه."
+)
+
+ADMIN_PAY_NOT_FOUND = "💳 این پرداخت پیدا نشد!"
+ADMIN_PAY_ALREADY = "💳 این پرداخت قبلاً بررسی شده!"

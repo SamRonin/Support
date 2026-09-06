@@ -14,6 +14,8 @@ class Dialog:
     action: str
     bot_id: int | None = None
     payment_id: int | None = None
+    target_user_id: int | None = None  # admin panel: user a dialog is about
+    text: str | None = None            # admin panel: staged broadcast text
     created_at: float = field(default_factory=time.monotonic)
 
 

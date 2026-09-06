@@ -339,7 +339,14 @@ def _period(now: dt.datetime | None = None) -> str:
 
 
 async def count_usage(bot_id: int, chat_id: int) -> None:
-    """Count chat + global usage rows in ONE round trip (was: two queries)."""
+    """Count chat + global usage rows in ONE round trip (was: two queries).
+
+    Two rows are maintained per bot/period:
+    - one row per chat (chat_id = the real chat)  -> unique-chat analytics
+    - one global row  (chat_id = 0)               -> total message count
+    The READ helpers below must filter accordingly — summing ALL rows used
+    to double-count every message (quota drained twice as fast).
+    """
     period = _period()
     await db.pool().execute(
         """
@@ -358,8 +365,15 @@ async def month_usage_total(bot_id: int) -> int:
     hit = _usage_cache.get(key)
     if hit and time.monotonic() - hit[1] < _USAGE_TTL:
         return hit[0]
+    # global row (chat_id = 0) only; falls back to per-chat rows for data
+    # written by the old single-row code so nothing is under-counted
     val = await db.pool().fetchval(
-        "SELECT COALESCE(sum(count), 0) FROM usage WHERE bot_id = $1 AND period = $2",
+        """
+        SELECT COALESCE(
+            (SELECT sum(count) FROM usage WHERE bot_id = $1 AND period = $2 AND chat_id = 0),
+            (SELECT sum(count) FROM usage WHERE bot_id = $1 AND period = $2 AND chat_id <> 0)
+        )
+        """,
         key[0], key[1],
     )
     _usage_cache[key] = (val or 0, time.monotonic())
@@ -368,6 +382,175 @@ async def month_usage_total(bot_id: int) -> int:
 
 async def month_unique_chats(bot_id: int) -> int:
     return await db.pool().fetchval(
-        "SELECT count(*) FROM usage WHERE bot_id = $1 AND period = $2",
+        "SELECT count(*) FROM usage WHERE bot_id = $1 AND period = $2 AND chat_id <> 0",
         bot_id, _period(),
     )
+
+
+# ---------------------------------------------------------------- admin panel
+async def admin_stats() -> dict:
+    """Everything the admin dashboard shows — ONE round trip."""
+    row = await db.pool().fetchrow(
+        """
+        SELECT
+            (SELECT count(*) FROM users)                                        AS users_total,
+            (SELECT count(*) FROM users WHERE created_at >= now() - interval '1 day')  AS users_today,
+            (SELECT count(*) FROM users WHERE created_at >= now() - interval '7 days') AS users_week,
+            (SELECT count(*) FROM users WHERE is_pro AND (pro_until IS NULL OR pro_until > now())) AS users_pro,
+            (SELECT count(*) FROM users WHERE banned)                            AS users_banned,
+            (SELECT count(*) FROM bots)                                         AS bots_total,
+            (SELECT count(*) FROM bots WHERE active)                            AS bots_active,
+            (SELECT count(*) FROM payments WHERE status = 'pending')            AS pays_pending,
+            (SELECT count(*) FROM payments WHERE status = 'approved')           AS pays_approved,
+            (SELECT count(*) FROM payments WHERE status = 'rejected')           AS pays_rejected,
+            (SELECT COALESCE(sum(amount), 0) FROM payments WHERE status = 'approved') AS revenue,
+            (SELECT COALESCE(
+                (SELECT sum(count) FROM usage WHERE period = $1 AND chat_id = 0),
+                (SELECT sum(count) FROM usage WHERE period = $1 AND chat_id <> 0)
+            ))                                                                    AS usage_month,
+            (SELECT count(*) FROM referrals)                                    AS referrals_total
+        """,
+        _period(),
+    )
+    return dict(row) if row else {}
+
+
+async def count_users() -> int:
+    return await db.pool().fetchval("SELECT count(*) FROM users") or 0
+
+
+async def list_users(offset: int, limit: int) -> list[dict]:
+    """Newest users first, with bot counts and monthly usage per user."""
+    rows = await db.pool().fetch(
+        """
+        SELECT u.*,
+               (SELECT count(*) FROM bots b WHERE b.owner_id = u.user_id) AS bots_count
+        FROM users u
+        ORDER BY u.created_at DESC, u.user_id DESC
+        LIMIT $1 OFFSET $2
+        """,
+        limit, offset,
+    )
+    return [dict(r) for r in rows]
+
+
+async def find_user(query: str) -> dict | None:
+    """Find a user by numeric ID or @username."""
+    q = (query or "").strip().lstrip("@")
+    if not q:
+        return None
+    if q.isdigit():
+        row = await db.pool().fetchrow("SELECT * FROM users WHERE user_id = $1", int(q))
+        if row:
+            return dict(row)
+    row = await db.pool().fetchrow(
+        "SELECT * FROM users WHERE lower(username) = $1", q.lower()
+    )
+    return dict(row) if row else None
+
+
+async def user_payments(user_id: int) -> list[dict]:
+    rows = await db.pool().fetch(
+        "SELECT * FROM payments WHERE user_id = $1 ORDER BY id DESC LIMIT 20",
+        user_id,
+    )
+    return [dict(r) for r in rows]
+
+
+async def user_usage_month(user_id: int) -> int:
+    """Total AI messages of all bots owned by this user this month."""
+    return await db.pool().fetchval(
+        """
+        SELECT COALESCE(sum(count), 0) FROM usage
+        WHERE chat_id = 0 AND period = $1
+          AND bot_id IN (SELECT id FROM bots WHERE owner_id = $2)
+        """,
+        _period(), user_id,
+    ) or 0
+
+
+async def count_bots() -> int:
+    return await db.pool().fetchval("SELECT count(*) FROM bots") or 0
+
+
+async def list_all_bots(offset: int, limit: int) -> list[dict]:
+    rows = await db.pool().fetch(
+        """
+        SELECT b.*, u.first_name AS owner_first_name, u.username AS owner_username,
+               (SELECT COALESCE(sum(count), 0) FROM usage
+                WHERE bot_id = b.id AND period = $1 AND chat_id = 0) AS month_usage
+        FROM bots b JOIN users u ON u.user_id = b.owner_id
+        ORDER BY b.id DESC
+        LIMIT $2 OFFSET $3
+        """,
+        _period(), limit, offset,
+    )
+    return [dict(r) for r in rows]
+
+
+async def get_bot_with_owner(bot_id: int) -> dict | None:
+    row = await db.pool().fetchrow(
+        """
+        SELECT b.*, u.first_name AS owner_first_name, u.username AS owner_username,
+               (SELECT COALESCE(sum(count), 0) FROM usage
+                WHERE bot_id = b.id AND period = $1 AND chat_id = 0) AS month_usage
+        FROM bots b JOIN users u ON u.user_id = b.owner_id
+        WHERE b.id = $2
+        """,
+        _period(), bot_id,
+    )
+    return dict(row) if row else None
+
+
+async def count_payments(status: str | None = None) -> int:
+    if status:
+        return await db.pool().fetchval(
+            "SELECT count(*) FROM payments WHERE status = $1", status
+        ) or 0
+    return await db.pool().fetchval("SELECT count(*) FROM payments") or 0
+
+
+async def list_payments(status: str | None, offset: int, limit: int) -> list[dict]:
+    """Payments with buyer info (newest first)."""
+    if status:
+        rows = await db.pool().fetch(
+            """
+            SELECT p.*, u.first_name AS buyer_name, u.username AS buyer_username
+            FROM payments p JOIN users u ON u.user_id = p.user_id
+            WHERE p.status = $1
+            ORDER BY p.id DESC
+            LIMIT $2 OFFSET $3
+            """,
+            status, limit, offset,
+        )
+    else:
+        rows = await db.pool().fetch(
+            """
+            SELECT p.*, u.first_name AS buyer_name, u.username AS buyer_username
+            FROM payments p JOIN users u ON u.user_id = p.user_id
+            ORDER BY p.id DESC
+            LIMIT $1 OFFSET $2
+            """,
+            limit, offset,
+        )
+    return [dict(r) for r in rows]
+
+
+async def get_payment_with_buyer(payment_id: int) -> dict | None:
+    row = await db.pool().fetchrow(
+        """
+        SELECT p.*, u.first_name AS buyer_name, u.username AS buyer_username
+        FROM payments p JOIN users u ON u.user_id = p.user_id
+        WHERE p.id = $1
+        """,
+        payment_id,
+    )
+    return dict(row) if row else None
+
+
+async def list_broadcast_ids() -> list[int]:
+    """All user IDs that may receive a broadcast (not banned)."""
+    rows = await db.pool().fetch(
+        "SELECT user_id FROM users WHERE NOT banned ORDER BY user_id"
+    )
+    return [r["user_id"] for r in rows]

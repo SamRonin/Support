@@ -19,6 +19,7 @@ from aiogram.types import Message
 
 from .. import config, repo, texts
 from ..ai_client import AIError, build_system_prompt, chat
+from ..lang import detect_language, lang_fa
 
 log = logging.getLogger("child.handlers")
 
@@ -54,8 +55,17 @@ def _append_history(key: tuple[int, int], role: str, content: str) -> None:
 
 
 def _build_prompt(bot_row, chat_id: int, user_text: str, is_pro: bool) -> str:
-    """Compose full prompt: system + (pro) conversation memory + user message."""
-    system = build_system_prompt(bot_row["title"], bot_row["knowledge"])
+    """Compose full prompt: system + (pro) conversation memory + user message.
+
+    Language locking: the customer's language is detected from THIS message
+    and (a) pinned inside the system prompt, (b) repeated as the very last
+    line of the prompt (recency strongly increases compliance). History
+    labels are language-neutral emojis so they cannot bias the reply tongue.
+    """
+    user_language = detect_language(user_text)
+    system = build_system_prompt(
+        bot_row["title"], bot_row["knowledge"], user_language=user_language
+    )
     parts = [system]
 
     if is_pro:  # memory is a Pro-only feature
@@ -63,12 +73,19 @@ def _build_prompt(bot_row, chat_id: int, user_text: str, is_pro: bool) -> str:
         entry = _history.get(key)
         if entry and entry["msgs"]:
             convo = "\n".join(
-                f"{'مشتری' if m['role'] == 'user' else 'پشتیبانی'}: {m['content']}"
+                f"{'👤' if m['role'] == 'user' else '🤖'}: {m['content']}"
                 for m in entry["msgs"]
             )
-            parts.append("گفتگوی قبلی با همین مشتری:\n" + convo)
+            parts.append("🗂 سابقه گفتگو / conversation history:\n" + convo)
 
-    parts.append("پیام جدید مشتری: " + user_text)
+    parts.append("👤 پیام جدید مشتری (new customer message):\n" + user_text)
+
+    if user_language:
+        fa = lang_fa(user_language)
+        parts.append(
+            f"⚠️ REMINDER: The customer's message is in {user_language} ({fa}). "
+            f"Your answer MUST be written ONLY in {user_language} — هیچ جمله‌ای به زبان دیگری ننویس."
+        )
     return "\n\n".join(parts)
 
 
