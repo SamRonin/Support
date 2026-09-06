@@ -9,6 +9,13 @@ def _int_env(key: str, default: int) -> int:
         return default
 
 
+def _bool_env(key: str, default: bool) -> bool:
+    raw = os.getenv(key, "").strip().lower()
+    if not raw:
+        return default
+    return raw not in ("0", "false", "no", "off")
+
+
 BOT_TOKEN = os.getenv("MOTHER_BOT_TOKEN", "").strip()
 ADMIN_ID = _int_env("ADMIN_ID", 0)
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
@@ -42,7 +49,15 @@ FALLBACK_MODELS = [
 ]
 
 AI_API_URL = "https://omegatech-api.dixonomega.tech/api/ai/Aicli"
-AI_TIMEOUT = 90
+
+# --- speed tuning (was: 90s timeout + sequential fallback with sleeps) ---
+AI_TIMEOUT = _int_env("AI_TIMEOUT", 30)            # per-request timeout (seconds)
+AI_HEDGE_DELAY = float(os.getenv("AI_HEDGE_DELAY", "2.5"))  # start a parallel model after N seconds
+AI_MAX_PARALLEL = _int_env("AI_MAX_PARALLEL", 3)   # max simultaneous model attempts
+
+# Drop updates that arrived while a child bot was down (redeploys etc.) so
+# fresh messages are answered instantly instead of first grinding a stale backlog.
+CHILD_DROP_PENDING_UPDATES = _bool_env("CHILD_DROP_PENDING_UPDATES", True)
 
 SUPPORTED_MODELS = {
     "chatgpt_5_5": "ChatGPT 5.5",

@@ -59,8 +59,11 @@ def photo_keyboard(bot_id: int) -> InlineKeyboardMarkup:
 
 def channels_keyboard(bot, can_add: bool) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    for ch in bot["channels"]:
-        kb.button(text=f"❌ @{ch}", callback_data=f"ch:del:{bot['id']}:{ch}")
+    # index-based callbacks: channel names/invite codes can overflow the
+    # 64-byte callback_data limit and break the whole keyboard
+    for idx, ch in enumerate(bot["channels"] or []):
+        label = ch if ch.startswith("+") else f"@{ch}"
+        kb.button(text=f"❌ {label}", callback_data=f"ch:del:{bot['id']}:{idx}")
     if can_add:
         kb.button(text="➕ اتصال چنل جدید", callback_data=f"ch:add:{bot['id']}")
     kb.button(text="🔌 راهنمای Chat Automation", callback_data=f"set:business:{bot['id']}")
@@ -118,6 +121,14 @@ def referral_keyboard(link: str) -> InlineKeyboardMarkup:
 def back_to_menu() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="🔙 منوی اصلی", callback_data="menu:main")
+    return kb.as_markup()  # was: `return kb` — sent the Builder object and crashed every caller
+
+
+def after_create_keyboard() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⚙️ تنظیمات ربات", callback_data="bots:list")
+    kb.button(text="🏠 منوی اصلی", callback_data="menu:main")
+    kb.adjust(1)
     return kb.as_markup()
 
 

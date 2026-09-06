@@ -44,9 +44,12 @@ class UserMiddleware(BaseMiddleware):
 
 
 class ThrottleMiddleware(BaseMiddleware):
-    """Very light anti-flood: max 4 events per 5 seconds per user."""
+    """Very light anti-flood: max 8 events per 5 seconds per user.
 
-    RATE_LIMIT = 4
+    (4 was too tight: normal menu navigation — /start + 4 clicks — already
+    exceeded it and buttons silently stopped responding.)"""
+
+    RATE_LIMIT = 8
     WINDOW = 5.0
 
     def __init__(self) -> None:

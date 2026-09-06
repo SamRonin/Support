@@ -80,7 +80,7 @@ async def init_pool() -> asyncpg.Pool:
     _pool = await asyncpg.create_pool(
         url,
         min_size=1,
-        max_size=5,
+        max_size=10,          # was 5 — many child bots + mother polling need headroom
         command_timeout=30,
         statement_cache_size=0,  # required for some pooled providers (e.g. PgBouncer)
     )

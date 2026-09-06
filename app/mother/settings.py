@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import io
+import re
 
-from aiogram import Bot, F, Router
+from aiogram import F, Router
 from aiogram.types import BufferedInputFile, CallbackQuery, InputProfilePhotoStatic, Message
 
 from .. import config, keyboards, repo, texts
@@ -13,11 +14,36 @@ from ..states import Dialog, store
 
 router = Router(name="mother:settings")
 
+_USERNAME_RE = re.compile(r"^@?([A-Za-z0-9_]{4,32})$")
+_INVITE_RE = re.compile(
+    r"(?:t\.me|telegram\.me)/(?:\+|joinchat/)([A-Za-z0-9_-]{8,64})", re.IGNORECASE
+)
+_LINK_RE = re.compile(r"(?:t\.me|telegram\.me)/@?([A-Za-z0-9_]{4,32})", re.IGNORECASE)
 
-def _bot_access_check(cb: CallbackQuery, bot_id: int) -> bool:
-    """Non-owners must not touch others' bots (callback data forging)."""
-    # ownership is re-checked in handlers via owner_id
-    return True
+
+def _fmt_channel(c: str) -> str:
+    return c if c.startswith("+") else f"@{c}"
+
+
+def _parse_channel(raw: str) -> str | None:
+    """Accept @username, t.me/username, t.me/+invite or t.me/joinchat/xxx links.
+
+    (The old code had `... or "telegram.me/+" ...` — a truthy constant — which
+    made the branch always match and ANY random text was accepted as a channel.)
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    m = _USERNAME_RE.match(raw)
+    if m:
+        return m.group(1)
+    m = _INVITE_RE.search(raw)
+    if m:
+        return "+" + m.group(1)
+    m = _LINK_RE.search(raw)
+    if m:
+        return m.group(1)
+    return None
 
 
 async def _get_own_bot(cb: CallbackQuery, bot_id: int):
@@ -38,10 +64,13 @@ async def _open_settings(cb: CallbackQuery, bot_id: int) -> None:
         knowledge_status = "❌ ثبت نشده"
     else:
         knowledge_status = f"✅ {len(row['knowledge'])} کاراکتر"
-    channels = "، ".join(f"@{c}" for c in row["channels"]) or "—"
+    channels = "، ".join(_fmt_channel(c) for c in row["channels"]) or "—"
     model = config.SUPPORTED_MODELS.get(row["model"] or "", "پیش‌فرض (GPT)")
     biz_status = "ℹ️ طبق راهنما فعال کن" if not row["welcome_message"] else "ℹ️ طبق راهنما"
 
+    if not cb.message:
+        await cb.answer()
+        return
     await cb.message.edit_text(
         texts.SETTINGS_MENU.format(
             username=row["username"] or row["id"],
@@ -65,6 +94,10 @@ async def cb_open_bot(cb: CallbackQuery) -> None:
 # ------------------------------------------------------------------ simple text setters
 async def _ask_text(cb: CallbackQuery, action: str, prompt: str, bot_id: int) -> None:
     store.set(cb.from_user.id, Dialog(action=action, bot_id=bot_id))
+    if not cb.message:
+        await cb.answer()
+        return
+    await cb.answer()
     await cb.message.edit_text(prompt)
 
 
@@ -102,6 +135,10 @@ async def cb_set_knowledge(cb: CallbackQuery) -> None:
     is_pro = repo.is_pro_row(owner)
     limit = config.PRO_KNOWLEDGE_CHARS if is_pro else config.FREE_KNOWLEDGE_CHARS
     store.set(cb.from_user.id, Dialog(action="set:knowledge", bot_id=bot_id))
+    if not cb.message:
+        await cb.answer()
+        return
+    await cb.answer()
     await cb.message.edit_text(
         texts.ASK_KNOWLEDGE.format(limit=limit, current=len(row["knowledge"])),
     )
@@ -118,6 +155,10 @@ async def cb_set_welcome(cb: CallbackQuery) -> None:
         await cb.answer(texts.NEED_PRO, show_alert=True)
         return
     store.set(cb.from_user.id, Dialog(action="set:welcome", bot_id=bot_id))
+    if not cb.message:
+        await cb.answer()
+        return
+    await cb.answer()
     await cb.message.edit_text(texts.ASK_WELCOME)
 
 
@@ -130,6 +171,10 @@ async def cb_set_model(cb: CallbackQuery) -> None:
     owner = await repo.get_user(cb.from_user.id)
     is_pro = repo.is_pro_row(owner)
     models = config.PRO_MODELS + config.FREE_MODELS if is_pro else config.FREE_MODELS
+    if not cb.message:
+        await cb.answer()
+        return
+    await cb.answer()
     await cb.message.edit_text(
         texts.SELECT_MODEL,
         reply_markup=keyboards.model_keyboard(bot_id, models, row["model"]),
@@ -151,6 +196,8 @@ async def cb_model_pick(cb: CallbackQuery) -> None:
         return
     await repo.set_bot_model(bot_id, model)
     await cb.answer()
+    if not cb.message:
+        return
     await cb.message.edit_text(
         texts.MODEL_SAVED.format(model=config.SUPPORTED_MODELS.get(model, model)),
         reply_markup=keyboards.back_to_bot(bot_id),
@@ -166,20 +213,22 @@ async def cb_set_stats(cb: CallbackQuery) -> None:
     owner = await repo.get_user(cb.from_user.id)
     if not repo.is_pro_row(owner):
         await cb.answer()
-        await cb.message.answer(texts.STATS_NOT_PRO, reply_markup=keyboards.back_to_bot(bot_id))
+        if cb.message:
+            await cb.message.answer(texts.STATS_NOT_PRO, reply_markup=keyboards.back_to_bot(bot_id))
         return
     messages = await repo.month_usage_total(bot_id)
     chats = await repo.month_unique_chats(bot_id)
     await cb.answer()
-    await cb.message.answer(
-        texts.STATS_TEXT.format(
-            username=row["username"] or bot_id,
-            messages=messages,
-            chats=chats,
-            knowledge=len(row["knowledge"]),
-        ),
-        reply_markup=keyboards.back_to_bot(bot_id),
-    )
+    if cb.message:
+        await cb.message.answer(
+            texts.STATS_TEXT.format(
+                username=row["username"] or bot_id,
+                messages=messages,
+                chats=chats,
+                knowledge=len(row["knowledge"]),
+            ),
+            reply_markup=keyboards.back_to_bot(bot_id),
+        )
 
 
 # ------------------------------------------------------------------ photos
@@ -191,20 +240,22 @@ async def cb_set_photo(cb: CallbackQuery) -> None:
         row = await _get_own_bot(cb, bot_id)
         if not row:
             return
-        child = Bot(token=row["token"])
+        child = manager.get_api_bot(bot_id, row["token"])
         try:
             await child.remove_my_profile_photo()
             await cb.answer(texts.PHOTO_REMOVED)
         except Exception:
             await cb.answer(texts.SET_FAIL, show_alert=True)
-        finally:
-            await child.session.close()
         return
 
     bot_id = int(parts[2])
     if not await _get_own_bot(cb, bot_id):
         return
     store.set(cb.from_user.id, Dialog(action="set:photo", bot_id=bot_id))
+    if not cb.message:
+        await cb.answer()
+        return
+    await cb.answer()
     await cb.message.edit_text(texts.ASK_PROFILE_PHOTO, reply_markup=keyboards.photo_keyboard(bot_id))
 
 
@@ -215,6 +266,10 @@ async def cb_set_descphoto(cb: CallbackQuery) -> None:
     bot_id = int(cb.data.split(":")[2])
     if not await _get_own_bot(cb, bot_id):
         return
+    if not cb.message:
+        await cb.answer()
+        return
+    await cb.answer()
     await cb.message.edit_text(
         "🖼 <b>عکس توضیحات (Description Picture)</b>\n\n"
         "این عکس بالای صفحه توضیحات ربات نمایش داده می‌شه.\n\n"
@@ -239,8 +294,14 @@ async def cb_set_channels(cb: CallbackQuery) -> None:
     is_pro = repo.is_pro_row(owner)
     limit = config.PRO_CHANNEL_LIMIT if is_pro else config.FREE_CHANNEL_LIMIT
     can_add = len(row["channels"]) < limit
+    if not cb.message:
+        await cb.answer()
+        return
+    await cb.answer()
     await cb.message.edit_text(
-        texts.ASK_CHANNEL.format(channels="، ".join(f"@{c}" for c in row["channels"]) or "—"),
+        texts.ASK_CHANNEL.format(
+            channels="، ".join(_fmt_channel(c) for c in row["channels"]) or "—"
+        ),
         reply_markup=keyboards.channels_keyboard(row, can_add),
     )
 
@@ -252,24 +313,40 @@ async def cb_channel_add(cb: CallbackQuery) -> None:
     if not row:
         return
     store.set(cb.from_user.id, Dialog(action="ch:add", bot_id=bot_id))
-    await cb.message.edit_text(texts.ASK_CHANNEL.format(channels="، ".join(f"@{c}" for c in row["channels"]) or "—"))
+    if not cb.message:
+        await cb.answer()
+        return
+    await cb.answer()
+    await cb.message.edit_text(
+        texts.ASK_CHANNEL.format(
+            channels="، ".join(_fmt_channel(c) for c in row["channels"]) or "—"
+        )
+    )
 
 
 @router.callback_query(F.data.startswith("ch:del:"))
 async def cb_channel_del(cb: CallbackQuery) -> None:
     parts = cb.data.split(":")
-    bot_id, channel = int(parts[2]), parts[3]
+    bot_id, idx = int(parts[2]), int(parts[3])
     row = await _get_own_bot(cb, bot_id)
     if not row:
         return
-    await repo.remove_bot_channel(bot_id, channel)
-    await cb.answer(texts.CHANNEL_REMOVED)
+    channels = row["channels"] or []
+    if 0 <= idx < len(channels):
+        await repo.remove_bot_channel(bot_id, channels[idx])
+        await cb.answer(texts.CHANNEL_REMOVED)
+    else:
+        await cb.answer()
     row = await repo.get_bot(bot_id)
+    if not row or not cb.message:
+        return
     owner = await repo.get_user(cb.from_user.id)
     is_pro = repo.is_pro_row(owner)
     limit = config.PRO_CHANNEL_LIMIT if is_pro else config.FREE_CHANNEL_LIMIT
     await cb.message.edit_text(
-        texts.ASK_CHANNEL.format(channels="، ".join(f"@{c}" for c in row["channels"]) or "—"),
+        texts.ASK_CHANNEL.format(
+            channels="، ".join(_fmt_channel(c) for c in row["channels"]) or "—"
+        ),
         reply_markup=keyboards.channels_keyboard(row, len(row["channels"]) < limit),
     )
 
@@ -279,6 +356,10 @@ async def cb_set_business(cb: CallbackQuery) -> None:
     bot_id = int(cb.data.split(":")[2])
     if not await _get_own_bot(cb, bot_id):
         return
+    if not cb.message:
+        await cb.answer()
+        return
+    await cb.answer()
     await cb.message.edit_text(
         texts.BUSINESS_GUIDE, reply_markup=keyboards.back_to_bot(bot_id)
     )
@@ -294,7 +375,8 @@ async def cb_delete_yes(cb: CallbackQuery) -> None:
     manager.stop_bot_task(bot_id)
     await repo.delete_bot(bot_id)
     await cb.answer("🗑 ربات حذف شد")
-    await cb.message.edit_text("🗑 ربات حذف شد.", reply_markup=keyboards.back_to_menu())
+    if cb.message:
+        await cb.message.edit_text("🗑 ربات حذف شد.", reply_markup=keyboards.back_to_menu())
 
 
 @router.callback_query(F.data.startswith("bot:del:"))
@@ -302,6 +384,10 @@ async def cb_delete_ask(cb: CallbackQuery) -> None:
     bot_id = int(cb.data.split(":")[2])
     if not await _get_own_bot(cb, bot_id):
         return
+    if not cb.message:
+        await cb.answer()
+        return
+    await cb.answer()
     await cb.message.edit_text(
         "⚠️ مطمئنی می‌خوای این ربات رو حذف کنی؟\n\n"
         "همه دانش و تنظیماتش پاک می‌شه و ربات دیگه جواب نمی‌ده!",
@@ -310,16 +396,28 @@ async def cb_delete_ask(cb: CallbackQuery) -> None:
 
 
 # ------------------------------------------------------------------ dialog text input
+def _expired(message: Message) -> bool:
+    """Dialog vanished (TTL or restart) — tell the user instead of ignoring."""
+    message.answer(texts.DIALOG_EXPIRED)
+    return True
+
+
 @router.message(Dialog.action_filter("set:photo"))
 async def msg_photo(message: Message) -> None:
-    d = store.pop(message.from_user.id)
+    d = store.get(message.from_user.id)
     if not d:
+        _expired(message)
         return
     row = await repo.get_bot(d.bot_id)
+    if not row:
+        store.pop(message.from_user.id)
+        await message.answer(texts.GENERIC_ERROR)
+        return
     if not message.photo:
+        # keep the dialog alive so the user can retry with a proper photo
         await message.answer("⚠️ لطفاً عکس رو به‌صورت <b>عکس</b> بفرست، نه فایل!")
         return
-    # download the largest size from the user's upload via mother bot
+
     file_id = message.photo[-1].file_id
     mother = message.bot
     tg_file = await mother.get_file(file_id)
@@ -327,88 +425,115 @@ async def msg_photo(message: Message) -> None:
     await mother.download_file(tg_file.file_path, destination=buf)
     buf.seek(0)
 
-    child = Bot(token=row["token"])
+    child = manager.get_api_bot(d.bot_id, row["token"])
     try:
         # profile photos must be uploaded as new files (file_id reuse not allowed)
         photo_input = InputProfilePhotoStatic(
             type="static", photo=BufferedInputFile(buf.getvalue(), filename="avatar.jpg")
         )
         await child.set_my_profile_photo(photo=photo_input)
+        store.pop(message.from_user.id)
         await message.answer(texts.PHOTO_SET_OK)
     except Exception:
         await message.answer(texts.SET_FAIL)
-    finally:
-        await child.session.close()
 
 
 @router.message(Dialog.action_filter("set:title"))
 async def msg_title(message: Message) -> None:
     d = store.get(message.from_user.id)
+    if not d:
+        _expired(message)
+        return
     row = await repo.get_bot(d.bot_id)
     title = (message.text or "").strip()
     if not (1 <= len(title) <= 64):
-        await message.answer(texts.SET_FAIL)
+        await message.answer(texts.TITLE_LENGTH)
         return
-    child = Bot(token=row["token"])
+    child = manager.get_api_bot(d.bot_id, row["token"]) if row else None
+    if not child:
+        store.pop(message.from_user.id)
+        await message.answer(texts.GENERIC_ERROR)
+        return
     try:
         await child.set_my_name(title)
         await repo.set_bot_title(d.bot_id, title)
+        store.pop(message.from_user.id)
         await message.answer(texts.SET_OK)
     except Exception:
         await message.answer(texts.SET_FAIL)
-    finally:
-        await child.session.close()
-    store.pop(message.from_user.id)
 
 
 @router.message(Dialog.action_filter("set:bio"))
 async def msg_bio(message: Message) -> None:
     d = store.get(message.from_user.id)
+    if not d:
+        _expired(message)
+        return
     row = await repo.get_bot(d.bot_id)
     bio = (message.text or "").strip()
     if not (1 <= len(bio) <= 120):
-        await message.answer(texts.SET_FAIL)
+        await message.answer(texts.BIO_LENGTH)
         return
-    child = Bot(token=row["token"])
+    child = manager.get_api_bot(d.bot_id, row["token"]) if row else None
+    if not child:
+        store.pop(message.from_user.id)
+        await message.answer(texts.GENERIC_ERROR)
+        return
     try:
         await child.set_my_short_description(bio)
+        store.pop(message.from_user.id)
         await message.answer(texts.SET_OK)
     except Exception:
         await message.answer(texts.SET_FAIL)
-    finally:
-        await child.session.close()
-    store.pop(message.from_user.id)
 
 
 @router.message(Dialog.action_filter("set:desc"))
 async def msg_desc(message: Message) -> None:
     d = store.get(message.from_user.id)
+    if not d:
+        _expired(message)
+        return
     row = await repo.get_bot(d.bot_id)
     desc = (message.text or "").strip()
     if not (1 <= len(desc) <= 512):
-        await message.answer(texts.SET_FAIL)
+        await message.answer(texts.DESC_LENGTH)
         return
-    child = Bot(token=row["token"])
+    child = manager.get_api_bot(d.bot_id, row["token"]) if row else None
+    if not child:
+        store.pop(message.from_user.id)
+        await message.answer(texts.GENERIC_ERROR)
+        return
     try:
         await child.set_my_description(desc)
+        store.pop(message.from_user.id)
         await message.answer(texts.SET_OK)
     except Exception:
         await message.answer(texts.SET_FAIL)
-    finally:
-        await child.session.close()
-    store.pop(message.from_user.id)
 
 
 @router.message(Dialog.action_filter("set:knowledge"))
 async def msg_knowledge(message: Message) -> None:
     d = store.get(message.from_user.id)
+    if not d:
+        _expired(message)
+        return
     row = await repo.get_bot(d.bot_id)
+    if not row:
+        store.pop(message.from_user.id)
+        await message.answer(texts.GENERIC_ERROR)
+        return
     owner = await repo.get_user(message.from_user.id)
     is_pro = repo.is_pro_row(owner)
     limit = config.PRO_KNOWLEDGE_CHARS if is_pro else config.FREE_KNOWLEDGE_CHARS
     text = (message.text or "").strip()
+    if not text:
+        await message.answer("⚠️ متن خالی قابل ذخیره نیست!")
+        return
     if len(text) > limit:
-        await message.answer(f"⚠️ متن خیلی طولانیه! حداکثر {limit} کاراکتر مجاز است.")
+        await message.answer(
+            f"⚠️ متن خیلی طولانیه! حداکثر {limit} کاراکتر مجاز است "
+            f"(متن شما {len(text)} کاراکتر بود)."
+        )
         return
     await repo.set_bot_knowledge(d.bot_id, text)
     store.pop(message.from_user.id)
@@ -418,16 +543,19 @@ async def msg_knowledge(message: Message) -> None:
 @router.message(Dialog.action_filter("set:welcome"))
 async def msg_welcome(message: Message) -> None:
     d = store.get(message.from_user.id)
+    if not d:
+        _expired(message)
+        return
     owner = await repo.get_user(message.from_user.id)
     if not repo.is_pro_row(owner):
-        await message.answer(texts.NEED_PRO)
         store.pop(message.from_user.id)
+        await message.answer(texts.NEED_PRO)
         return
     text = (message.text or "").strip()
     if len(text) > 1000:
         await message.answer("⚠️ پیام خیلی طولانیه! حداکثر ۱۰۰۰ کاراکتر.")
         return
-    await repo.set_bot_welcome(d.bot_id, text)
+    await repo.set_bot_welcome(d.bot_id, text or None)
     store.pop(message.from_user.id)
     await message.answer(texts.WELCOME_SAVED)
 
@@ -435,26 +563,27 @@ async def msg_welcome(message: Message) -> None:
 @router.message(Dialog.action_filter("ch:add"))
 async def msg_channel_add(message: Message) -> None:
     d = store.get(message.from_user.id)
+    if not d:
+        _expired(message)
+        return
     row = await repo.get_bot(d.bot_id)
-    raw = (message.text or "").strip()
-    # accept @username, t.me/username or full invite link
-    channel = None
-    if raw.startswith("@") and 5 <= len(raw) <= 64:
-        channel = raw[1:]
-    elif "t.me/+" in raw or "telegram.me/+" or "t.me/joinchat/" in raw:
-        channel = raw.rstrip("/").split("/")[-1]
-    elif "t.me/" in raw:
-        channel = raw.rstrip("/").split("/")[-1]
+    if not row:
+        store.pop(message.from_user.id)
+        await message.answer(texts.GENERIC_ERROR)
+        return
+
+    channel = _parse_channel(message.text or "")
     if not channel:
-        await message.answer("⚠️ لینک چنل معتبر نیست!")
+        # keep the dialog alive for retry
+        await message.answer(texts.CHANNEL_INVALID)
         return
 
     owner = await repo.get_user(message.from_user.id)
     is_pro = repo.is_pro_row(owner)
     limit = config.PRO_CHANNEL_LIMIT if is_pro else config.FREE_CHANNEL_LIMIT
     if len(row["channels"]) >= limit:
-        await message.answer(texts.CHANNEL_LIMIT.format(max=limit))
         store.pop(message.from_user.id)
+        await message.answer(texts.CHANNEL_LIMIT.format(max=limit))
         return
 
     await repo.add_bot_channel(d.bot_id, channel)

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import re
 
-from aiogram import Bot, F, Router
-from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
+from aiogram import F, Router
+from aiogram.exceptions import TelegramUnauthorizedError, TelegramNetworkError
 from aiogram.types import CallbackQuery, Message
 
 from .. import config, keyboards, repo, texts
@@ -14,12 +14,15 @@ from ..states import Dialog, store
 
 router = Router(name="mother:create")
 
-TOKEN_RE = re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{30,}\b")
+# Telegram tokens: <bot_id>:<secret>. No trailing \b — a token may legitimately
+# end with "-" or "_" which \b would reject.
+TOKEN_RE = re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{30,}")
 
 
 @router.callback_query(F.data == "bot:create")
 async def cb_create(cb: CallbackQuery) -> None:
     if not cb.message:
+        await cb.answer()
         return
     user = await repo.get_user(cb.from_user.id)
     bots = await repo.list_user_bots(cb.from_user.id)
@@ -34,6 +37,7 @@ async def cb_create(cb: CallbackQuery) -> None:
         return
 
     store.set(cb.from_user.id, Dialog(action="create:token"))
+    await cb.answer()
     await cb.message.edit_text(texts.CREATE_BOT_ASK_TOKEN, disable_web_page_preview=True)
 
 
@@ -48,11 +52,18 @@ async def msg_token(message: Message) -> None:
     token = m.group(0)
 
     # validate via getMe using a temporary Bot instance
+    from aiogram import Bot
+
     temp = Bot(token=token)
     try:
         me = await temp.get_me()
-    except (TelegramAPIError, TelegramBadRequest):
+    except TelegramUnauthorizedError:
+        # 401 from Telegram: really an invalid token
         await message.answer(texts.INVALID_TOKEN)
+        return
+    except TelegramNetworkError:
+        # connectivity issue, not the user's fault — token is NOT rejected
+        await message.answer(texts.TOKEN_CHECK_FAILED)
         return
     finally:
         await temp.session.close()
@@ -73,4 +84,5 @@ async def msg_token(message: Message) -> None:
     await message.answer(
         texts.BOT_CREATED.format(title=title, username=username),
         disable_web_page_preview=True,
+        reply_markup=keyboards.after_create_keyboard(),
     )

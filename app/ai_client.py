@@ -1,14 +1,21 @@
-"""OmegaTech Aicli client with model fallback + retry.
+"""OmegaTech Aicli client with parallel (hedged) model fallback.
 
-Endpoint: GET/POST https://omegatech-api.dixonomega.tech/api/ai/Aicli
+Endpoint: POST https://omegatech-api.dixonomega.tech/api/ai/Aicli
   action=chat  model=<id>  query=<prompt>  ->  {"success": true, "data": {"reply": "..."}}
+
+Speed strategy ("hedged requests"):
+- The preferred model is requested immediately.
+- If no answer arrives within AI_HEDGE_DELAY seconds, further models from the
+  fallback chain are started *in parallel* (up to AI_MAX_PARALLEL at once).
+- The first successful reply wins; all remaining attempts are cancelled.
+- No artificial sleeps between attempts (previously up to ~1.5s each).
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import random
+import time
 
 import httpx
 
@@ -22,7 +29,13 @@ _client: httpx.AsyncClient | None = None
 def _get_client() -> httpx.AsyncClient:
     global _client
     if _client is None or _client.is_closed:
-        _client = httpx.AsyncClient(timeout=config.AI_TIMEOUT)
+        _client = httpx.AsyncClient(
+            timeout=httpx.Timeout(config.AI_TIMEOUT, connect=10.0, pool=10.0),
+            limits=httpx.Limits(
+                max_connections=30, max_keepalive_connections=15
+            ),
+            follow_redirects=True,
+        )
     return _client
 
 
@@ -70,29 +83,77 @@ async def _ask_once(model: str, prompt: str) -> str:
     return str(reply).strip()
 
 
-async def chat(prompt: str, preferred: str | None = None) -> str:
-    """Send prompt; try preferred model first, then the fallback chain."""
+def _build_chain(preferred: str | None) -> list[str]:
     chain: list[str] = []
     if preferred and preferred in config.SUPPORTED_MODELS:
         chain.append(preferred)
     for m in config.FALLBACK_MODELS:
         if m not in chain:
             chain.append(m)
+    return chain
+
+
+async def chat(prompt: str, preferred: str | None = None) -> str:
+    """Send the prompt; the first successful model wins (parallel hedging).
+
+    Staggering rules (keeps request load low while cutting wait time):
+    - model #0 (preferred) starts immediately;
+    - a further model joins only after AI_HEDGE_DELAY without an answer
+      OR right away when an in-flight attempt already failed;
+    - at most AI_MAX_PARALLEL requests run concurrently.
+    """
+    chain = _build_chain(preferred)
     if not chain:
         raise AIError("no models configured")
 
     errors: list[str] = []
-    for attempt, model in enumerate(chain):
-        try:
-            reply = await _ask_once(model, prompt)
-            return reply
-        except AIError as e:
-            errors.append(str(e))
-            log.warning("AI attempt %d/%d failed: %s", attempt + 1, len(chain), e)
-        except (httpx.HTTPError, asyncio.TimeoutError) as e:
-            errors.append(f"{model}: {e!r}")
-            log.warning("AI network error on %s: %r", model, e)
-        # brief backoff before next attempt
-        await asyncio.sleep(0.8 + random.random() * 0.7)
+    running: dict[asyncio.Task[str], float] = {}  # task -> started_at
+    next_idx = 0
+    next_allowed = 0.0  # monotonic time when another attempt may be launched
+
+    try:
+        while True:
+            now = time.monotonic()
+            while (
+                next_idx < len(chain)
+                and len(running) < config.AI_MAX_PARALLEL
+                and now >= next_allowed
+            ):
+                task = asyncio.create_task(_ask_once(chain[next_idx], prompt))
+                running[task] = time.monotonic()
+                next_idx += 1
+                # stagger: the next model joins only if this one is still pending
+                next_allowed = running[task] + config.AI_HEDGE_DELAY
+
+            if not running:
+                if next_idx >= len(chain):
+                    break  # every model tried, nothing in flight
+                await asyncio.sleep(max(0.0, next_allowed - time.monotonic()))
+                continue
+
+            if next_idx < len(chain):
+                wait_timeout = max(0.0, next_allowed - time.monotonic())
+            else:
+                wait_timeout = None  # chain exhausted: wait for what's in flight
+            done, _ = await asyncio.wait(
+                set(running), timeout=wait_timeout, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in done:
+                running.pop(task, None)
+                if task.cancelled():
+                    continue
+                exc = task.exception()
+                if exc is None:
+                    return task.result()  # first success wins
+                errors.append(repr(exc))
+                log.warning("AI attempt failed: %r", exc)
+                # a failed attempt frees its slot -> allow an immediate replacement
+                next_allowed = min(next_allowed, time.monotonic())
+    finally:
+        # cancel losing attempts and swallow their cancellation
+        for task in running:
+            task.cancel()
+        if running:
+            await asyncio.gather(*running, return_exceptions=True)
 
     raise AIError("all models failed: " + " | ".join(errors[:4]))

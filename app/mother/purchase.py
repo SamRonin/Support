@@ -47,19 +47,22 @@ async def cb_buy_start(cb: CallbackQuery) -> None:
 
 @router.message(Dialog.action_filter("buy:receipt"))
 async def msg_receipt(message: Message) -> None:
-    d = store.pop(message.from_user.id)
+    d = store.get(message.from_user.id)
     if not d or not d.payment_id:
+        await message.answer(texts.DIALOG_EXPIRED)
         return
 
-    receipt_text = (message.text or "").strip()
+    # a photo receipt usually carries the tracking number as its caption
+    receipt_text = (message.caption or message.text or "").strip()
     receipt_file_id = None
     if message.photo:
         receipt_file_id = message.photo[-1].file_id
     elif not receipt_text:
         await message.answer("⚠️ لطفاً عکس رسید یا شماره پیگیری رو بفرست.")
-        store.set(message.from_user.id, d)  # keep waiting
-        return
+        return  # dialog stays alive for retry
 
+
+    store.pop(message.from_user.id)
     await repo.set_payment_receipt(d.payment_id, receipt_text or None, receipt_file_id)
 
     # forward to the private channel for admin review
