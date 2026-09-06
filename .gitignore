@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Env & secrets
+.env
+
+# Test/dev scripts
+_test_ai.py
+_probe.py
+_smoke.py
+_check_sql.py
+
+# OS
+Thumbs.db
+.DS_Store
