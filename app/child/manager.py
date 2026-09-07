@@ -16,6 +16,8 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 
 from .. import config, repo
 from . import handlers
@@ -146,14 +148,23 @@ async def stop_all() -> None:
 
 
 async def notify_user(user_id: int, text: str) -> None:
-    """Best-effort DM through the mother bot (cached instance)."""
+    """Best-effort DM through the mother bot (cached instance).
+
+    The cached Bot instance MUST be created with ``parse_mode=HTML`` (matching
+    the mother dispatcher). Otherwise every message that uses HTML tags — like
+    the payment approval/rejection texts — gets sent as plain text and the user
+    sees literal ``<b>``/``<code>`` tags instead of formatted text.
+    """
     global _mother_bot
 
     if not config.BOT_TOKEN:
         return
     try:
         if _mother_bot is None:
-            _mother_bot = Bot(token=config.BOT_TOKEN)
+            _mother_bot = Bot(
+                token=config.BOT_TOKEN,
+                default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+            )
         await _mother_bot.send_message(user_id, text, disable_web_page_preview=True)
     except Exception:
         pass

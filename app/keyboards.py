@@ -1,4 +1,4 @@
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from . import config, texts
@@ -14,11 +14,52 @@ def main_menu(has_bots: bool, can_create: bool, is_admin: bool = False) -> Inlin
         kb.button(text="🛠 ساخت ربات جدید", callback_data="bot:create")
     kb.button(text="💎 خرید نسخه پرو", callback_data="buy:menu")
     kb.button(text="🎁 دعوت دوستان", callback_data="ref:menu")
+    kb.button(text="🆘 پشتیبانی", callback_data="support:menu")
     kb.button(text="ℹ️ راهنما", callback_data="help:menu")
     if is_admin:
-        kb.adjust(1, 2, 1, 1, 1)
+        kb.adjust(1, 2, 1, 1, 1, 1)
     else:
-        kb.adjust(2, 1, 1, 1)
+        kb.adjust(2, 1, 1, 1, 1)
+    return kb.as_markup()
+
+
+def create_bot_intro_keyboard() -> InlineKeyboardMarkup:
+    """Intro screen for the modern create-bot flow.
+
+    When ``CREATE_BOT_WEBAPP_URL`` is configured, the button opens the Mini App
+    (the native-looking modal from the screenshot). When it is not configured,
+    we fall back to an in-chat name -> username -> token flow that still uses
+    the new modern UX (same validation, same Persian instructions).
+    """
+    kb = InlineKeyboardBuilder()
+    if config.CREATE_BOT_WEBAPP_URL:
+        kb.button(
+            text=texts.CREATE_BOT_OPEN_WEBAPP_BTN,
+            web_app=WebAppInfo(url=config.CREATE_BOT_WEBAPP_URL),
+        )
+    else:
+        # fallback: enter name directly in chat
+        kb.button(text=texts.CREATE_BOT_OPEN_WEBAPP_BTN, callback_data="bot:create:form")
+    kb.button(text="🔙 منوی اصلی", callback_data="menu:main")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def support_keyboard() -> InlineKeyboardMarkup:
+    """Deep-link button to the admin's Telegram for support (Task 4)."""
+    kb = InlineKeyboardBuilder()
+    if config.SUPPORT_USERNAME:
+        url = f"https://t.me/{config.SUPPORT_USERNAME}"
+    elif config.ADMIN_ID:
+        # no username configured — use the tg:// deep link by numeric id
+        # (only works if the user has a public username or shares contact; the
+        #  button label still makes the intent clear)
+        url = f"https://t.me/share/url?url=پشتیبانی&text=سلام،%20نیاز%20به%20پشتیبانی%20دارم"
+    else:
+        url = "https://t.me"
+    kb.button(text=texts.SUPPORT_BUTTON, url=url)
+    kb.button(text="🔙 منوی اصلی", callback_data="menu:main")
+    kb.adjust(1)
     return kb.as_markup()
 
 

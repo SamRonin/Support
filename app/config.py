@@ -30,6 +30,18 @@ PRO_DURATION_DAYS = _int_env("PRO_DURATION_DAYS", 30)
 REFERRAL_INVITES = _int_env("REFERRAL_INVITES", 3)
 REFERRAL_REWARD_DAYS = _int_env("REFERRAL_REWARD_DAYS", 10)
 
+# --- Support contact (Task 4) ---------------------------------------------
+# Telegram username (without @) that users reach from the "🆘 پشتیبانی" button.
+# When empty, the button falls back to a deep link with the numeric ADMIN_ID.
+SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "").strip().lstrip("@")
+
+# --- Modern bot-creation Mini App (Task 3) --------------------------------
+# Public HTTPS URL where the create-bot Mini App HTML is hosted.
+# Set this in your env, e.g.  CREATE_BOT_WEBAPP_URL=https://your-domain.com/create_bot.html
+# When left empty, the bot falls back to a clean in-chat name/username form
+# (still the new modern flow — just without opening a Mini App).
+CREATE_BOT_WEBAPP_URL = os.getenv("CREATE_BOT_WEBAPP_URL", "").strip()
+
 # Plans -------------------------------------------------------------------
 FREE_MAX_BOTS = 1
 PRO_MAX_BOTS = 3

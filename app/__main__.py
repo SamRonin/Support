@@ -14,7 +14,7 @@ from . import config, db
 from . import ai_client
 from .child import manager
 from .middlewares import ThrottleMiddleware, UserMiddleware
-from .mother import admin, create_bot, fallback, purchase, referral, settings, start
+from .mother import admin, create_bot, fallback, purchase, referral, settings, start, support
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,6 +31,7 @@ def build_mother_dispatcher() -> Dispatcher:
     dp.include_router(settings.router)
     dp.include_router(purchase.router)
     dp.include_router(referral.router)
+    dp.include_router(support.router)
     dp.include_router(admin.router)
     # fallback LAST: catches texts that no dialog matched (expired dialogs etc.)
     dp.include_router(fallback.router)
@@ -61,7 +62,10 @@ async def main() -> None:
 
     log.info("Mother bot starting (polling)...")
     try:
-        await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
+        await dp.start_polling(
+            bot,
+            allowed_updates=["message", "callback_query", "web_app_data"],
+        )
     finally:
         log.info("Shutting down: stopping child bots...")
         await manager.stop_all()

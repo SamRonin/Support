@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#1c2733" />
+  <title>Create Bot</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --tg-bg: var(--tg-theme-bg-color, #1c2733);
+      --tg-text: var(--tg-theme-text-color, #ffffff);
+      --tg-hint: var(--tg-theme-hint-color, #8a9bab);
+      --tg-link: var(--tg-theme-link-color, #6ab3f3);
+      --tg-button: var(--tg-theme-button-color, #6ab3f3);
+      --tg-button-text: var(--tg-theme-button-text-color, #ffffff);
+      --tg-secondary-bg: var(--tg-theme-secondary-bg-color, #232f3d);
+      --tg-section-bg: var(--tg-theme-section-bg-color, #2a3646);
+      --tg-section-separator: var(--tg-theme-section-separator-color, #34445a);
+      --tg-destructive: var(--tg-theme-destructive-text-color, #ff6b6b);
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Vazirmatn", "Tahoma", "Iranian Sans", sans-serif;
+      background: var(--tg-bg);
+      color: var(--tg-text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      min-height: 100dvh;
+      padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* The modal card — mirrors the screenshot */
+    .modal {
+      width: 100%;
+      max-width: 360px;
+      background: var(--tg-section-bg);
+      border-radius: 16px;
+      padding: 22px 20px 14px;
+      box-shadow: 0 12px 40px rgba(0,0,0,.45);
+      animation: pop .18s ease-out;
+    }
+    @keyframes pop {
+      from { opacity: 0; transform: translateY(8px) scale(.98); }
+      to   { opacity: 1; transform: translateY(0)    scale(1);   }
+    }
+
+    .header {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      margin-bottom: 18px;
+    }
+    .avatar {
+      width: 62px;
+      height: 62px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, #2a4d6e, #14233a 70%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 12px;
+      box-shadow: 0 4px 14px rgba(0,0,0,.35);
+    }
+    .avatar svg { width: 38px; height: 38px; }
+    .title {
+      font-size: 19px;
+      font-weight: 700;
+      letter-spacing: .2px;
+      margin: 0 0 6px;
+    }
+    .permission {
+      font-size: 12.5px;
+      line-height: 1.55;
+      color: var(--tg-hint);
+      margin: 0;
+      padding: 0 6px;
+    }
+    .permission b { color: var(--tg-text); font-weight: 600; }
+
+    .field { margin-bottom: 14px; }
+    .field-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      margin: 0 0 6px 2px;
+      color: var(--tg-link);
+    }
+    .field-label.muted { color: var(--tg-hint); font-weight: 500; }
+    .field-input-wrap {
+      position: relative;
+      border-bottom: 2px solid var(--tg-section-separator);
+      transition: border-color .15s;
+    }
+    .field-input-wrap.focused { border-bottom-color: var(--tg-button); }
+    .field-input {
+      width: 100%;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--tg-text);
+      font-size: 15px;
+      padding: 8px 0;
+      font-family: inherit;
+    }
+    .field-input::placeholder { color: var(--tg-hint); opacity: .7; }
+    .field-hint {
+      font-size: 11px;
+      color: var(--tg-hint);
+      margin: 5px 2px 0;
+      min-height: 14px;
+    }
+    .field-hint.error { color: var(--tg-destructive); }
+
+    .actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 10px;
+      padding-top: 6px;
+    }
+    .btn {
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 9px 18px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: opacity .12s, transform .05s;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn-cancel {
+      background: transparent;
+      color: var(--tg-link);
+    }
+    .btn-create {
+      background: var(--tg-button);
+      color: var(--tg-button-text);
+    }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,.8);
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 10px;
+      font-size: 13px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s;
+      z-index: 50;
+    }
+    .toast.show { opacity: 1; }
+
+    @media (max-width: 360px) {
+      .modal { padding: 18px 16px 12px; }
+      .avatar { width: 54px; height: 54px; }
+      .title { font-size: 17px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="header">
+      <div class="avatar" aria-hidden="true">
+        <!-- robot icon -->
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2.5a1 1 0 0 1 1 1V5h2.5A2.5 2.5 0 0 1 18 7.5V9h.5a1.5 1.5 0 0 1 1.5 1.5v3A1.5 1.5 0 0 1 18.5 15H18v1.5a2.5 2.5 0 0 1-2.5 2.5h-7A2.5 2.5 0 0 1 6 16.5V15h-.5A1.5 1.5 0 0 1 4 13.5v-3A1.5 1.5 0 0 1 5.5 9H6V7.5A2.5 2.5 0 0 1 8.5 5H11V3.5a1 1 0 0 1 1-1Z" fill="#6ab3f3"/>
+          <circle cx="9.5" cy="11" r="1.1" fill="#fff"/>
+          <circle cx="14.5" cy="11" r="1.1" fill="#fff"/>
+          <path d="M9.5 13.8h5" stroke="#fff" stroke-width="1" stroke-linecap="round"/>
+          <path d="M12 2v0" stroke="#6ab3f3" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h1 class="title" id="modal-title">Create Bot</h1>
+      <p class="permission">
+        <b id="bot-name-display">ربات‌ساز هوشمند</b> می‌خواد به‌جای شما یک چت‌بات بسازه و مدیریتش کنه.
+      </p>
+    </div>
+
+    <form id="create-form" autocomplete="off" novalidate>
+      <div class="field">
+        <label class="field-label" for="bot-name">Bot Name</label>
+        <div class="field-input-wrap" id="name-wrap">
+          <input
+            id="bot-name"
+            class="field-input"
+            type="text"
+            inputmode="text"
+            maxlength="64"
+            placeholder="نام ربات شما"
+            autocomplete="off"
+            dir="auto"
+          />
+        </div>
+        <div class="field-hint" id="name-hint">همان چیزی که در چت‌ها نمایش داده می‌شود (۱ تا ۶۴ کاراکتر).</div>
+      </div>
+
+      <div class="field">
+        <label class="field-label muted" for="bot-username">Bot Username or Link</label>
+        <div class="field-input-wrap" id="username-wrap">
+          <input
+            id="bot-username"
+            class="field-input"
+            type="text"
+            inputmode="latin-name"
+            maxlength="32"
+            placeholder="@bot"
+            autocomplete="off"
+            dir="ltr"
+            spellcheck="false"
+          />
+        </div>
+        <div class="field-hint" id="username-hint">باید به «bot» ختم شود. فقط حروف لاتین، عدد و زیرخط.</div>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn btn-cancel" id="cancel-btn">Cancel</button>
+        <button type="submit" class="btn btn-create" id="create-btn">Create</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    (function () {
+      var tg = window.Telegram && window.Telegram.WebApp;
+      if (tg) {
+        tg.ready();
+        tg.expand();
+        try { tg.setHeaderColor && tg.setHeaderColor("#1c2733"); } catch (e) {}
+        try { tg.setBackgroundColor && tg.setBackgroundColor("#1c2733"); } catch (e) {}
+      }
+
+      var nameInput   = document.getElementById("bot-name");
+      var userInput   = document.getElementById("bot-username");
+      var nameWrap    = document.getElementById("name-wrap");
+      var userWrap    = document.getElementById("username-wrap");
+      var nameHint    = document.getElementById("name-hint");
+      var userHint    = document.getElementById("username-hint");
+      var form        = document.getElementById("create-form");
+      var cancelBtn   = document.getElementById("cancel-btn");
+      var createBtn   = document.getElementById("create-btn");
+      var nameDisplay = document.getElementById("bot-name-display");
+      var toastEl     = document.getElementById("toast");
+
+      // display the entered name in the permission line, live
+      nameInput.addEventListener("input", function () {
+        var v = nameInput.value.trim();
+        nameDisplay.textContent = v ? v : "ربات‌ساز هوشمند";
+      });
+
+      // focus styling
+      function bindFocus(input, wrap) {
+        input.addEventListener("focus", function () { wrap.classList.add("focused"); });
+        input.addEventListener("blur",  function () { wrap.classList.remove("focused"); });
+      }
+      bindFocus(nameInput, nameWrap);
+      bindFocus(userInput, userWrap);
+
+      // normalize username as the user types: lowercase, strip @, allow only [a-z0-9_]
+      userInput.addEventListener("input", function () {
+        var v = userInput.value.replace(/[^A-Za-z0-9_@]/g, "");
+        if (v.indexOf("@") > 0) v = "@" + v.replace(/@/g, ""); // keep only a leading @
+        userInput.value = v;
+      });
+
+      function showToast(msg) {
+        toastEl.textContent = msg;
+        toastEl.classList.add("show");
+        setTimeout(function () { toastEl.classList.remove("show"); }, 1600);
+      }
+
+      function setError(hintEl, msg) {
+        hintEl.textContent = msg;
+        hintEl.classList.add("error");
+      }
+      function clearError(hintEl, msg) {
+        hintEl.textContent = msg;
+        hintEl.classList.remove("error");
+      }
+
+      function validate() {
+        var ok = true;
+        var name = nameInput.value.trim();
+        var user = userInput.value.trim().replace(/^@/, "");
+
+        if (!name || name.length < 1 || name.length > 64) {
+          setError(nameHint, "نام باید ۱ تا ۶۴ کاراکتر باشد.");
+          ok = false;
+        } else {
+          clearError(nameHint, "همان چیزی که در چت‌ها نمایش داده می‌شود (۱ تا ۶۴ کاراکتر).");
+        }
+
+        if (!/^[A-Za-z0-9_]{5,32}$/.test(user) || !/bot$/i.test(user)) {
+          setError(userHint, "یوزرنیم باید ۵-۳۲ کاراکتر و به «bot» ختم شود.");
+          ok = false;
+        } else {
+          clearError(userHint, "باید به «bot» ختم شود. فقط حروف لاتین، عدد و زیرخط.");
+        }
+        return ok;
+      }
+
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        if (!validate()) {
+          showToast("لطفاً اطلاعات را درست وارد کنید.");
+          return;
+        }
+        var payload = {
+          name: nameInput.value.trim(),
+          username: userInput.value.trim().replace(/^@/, "").toLowerCase()
+        };
+
+        createBtn.disabled = true;
+        createBtn.textContent = "...";
+
+        try {
+          if (tg && tg.sendData) {
+            // tg.sendData closes the Mini App and delivers the data to the bot
+            tg.sendData(JSON.stringify(payload));
+            // if sendData succeeded, the app closes here; the lines below run
+            // only as a fallback when running outside Telegram
+            setTimeout(function () {
+              createBtn.disabled = false;
+              createBtn.textContent = "Create";
+              showToast("داده ارسال شد. به ربات برگردید.");
+            }, 800);
+          } else {
+            // outside telegram (e.g. browser preview)
+            showToast(JSON.stringify(payload));
+            createBtn.disabled = false;
+            createBtn.textContent = "Create";
+          }
+        } catch (err) {
+          createBtn.disabled = false;
+          createBtn.textContent = "Create";
+          showToast("خطا در ارسال. دوباره تلاش کنید.");
+        }
+      });
+
+      cancelBtn.addEventListener("click", function () {
+        if (tg && tg.close) { tg.close(); return; }
+        nameInput.value = "";
+        userInput.value = "";
+        nameDisplay.textContent = "ربات‌ساز هوشمند";
+      });
+    })();
+  </script>
+</body>
+</html>

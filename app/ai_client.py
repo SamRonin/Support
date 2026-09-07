@@ -184,3 +184,42 @@ async def chat(prompt: str, preferred: str | None = None) -> str:
             await asyncio.gather(*running, return_exceptions=True)
 
     raise AIError("all models failed: " + " | ".join(errors[:4]))
+
+
+# ------------------------------------------------------------------ translation
+async def translate_text(text: str, target_language: str) -> str:
+    """Translate ``text`` into ``target_language`` (a language NAME like "Persian").
+
+    Used by the child-bot reply pipeline as a safety net: even with the strongest
+    possible language-locking prompt, models occasionally answer in the wrong
+    language (e.g. they keep answering in Persian when the customer wrote in
+    English). When the detected language of the reply does not match the
+    detected language of the customer's message, we translate the reply
+    ourselves so the user always receives an answer in their own language.
+
+    The same hedged ``chat()`` is reused, so translation inherits the parallel
+    fallback, timeouts and error handling for free.
+    """
+    if not text or not text.strip() or not target_language:
+        return text
+    fa = lang_fa(target_language) or target_language
+    prompt = (
+        f"You are a professional translator. Translate the following message into "
+        f"{target_language} ({fa}).\n\n"
+        f"STRICT RULES:\n"
+        f"1. Output ONLY the translated text — no notes, no quotes, no preamble.\n"
+        f"2. Preserve the tone, emojis, formatting and line breaks of the original.\n"
+        f"3. Do not add or remove information.\n"
+        f"4. If the text is already in {target_language}, return it unchanged.\n\n"
+        f"Text to translate:\n{text}"
+    )
+    try:
+        translated = await chat(prompt, preferred=None)
+    except AIError as e:
+        log.warning("translation to %s failed: %r", target_language, e)
+        return text  # fall back to the original (possibly wrong-language) reply
+    # strip surrounding quotes that models sometimes add
+    translated = translated.strip()
+    if len(translated) >= 2 and translated[0] in "\"'“”«»" and translated[-1] in "\"'”»«»":
+        translated = translated[1:-1].strip()
+    return translated or text

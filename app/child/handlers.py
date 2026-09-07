@@ -18,7 +18,7 @@ from aiogram.enums import ChatType
 from aiogram.types import Message
 
 from .. import config, repo, texts
-from ..ai_client import AIError, build_system_prompt, chat
+from ..ai_client import AIError, build_system_prompt, chat, translate_text
 from ..lang import detect_language, lang_fa
 
 log = logging.getLogger("child.handlers")
@@ -132,7 +132,13 @@ async def _typing_loop(bot: Bot, chat_id: int, business_connection_id: str | Non
 
 
 async def _reply_with_ai(message: Message, bot: Bot, bot_row, text: str) -> None:
-    """Shared AI reply pipeline (typing + hedged AI call + history + quota)."""
+    """Shared AI reply pipeline (typing + hedged AI call + history + quota).
+
+    Language safety net: even though the prompt hard-pins the reply language,
+    some models still answer in the wrong language. After the reply arrives we
+    detect its language; if it does not match the customer's message language,
+    we translate the reply into the customer's language ourselves.
+    """
     is_pro = await _owner_is_pro(bot_row["owner_id"])
     bc_id = getattr(message, "business_connection_id", None)
 
@@ -149,6 +155,28 @@ async def _reply_with_ai(message: Message, bot: Bot, bot_row, text: str) -> None
             await typing_task
         except (asyncio.CancelledError, Exception):
             pass
+
+    # ---- language enforcement: translate when the AI replied in the wrong tongue
+    user_language = detect_language(text)
+    if user_language:
+        reply_language = detect_language(reply)
+        if reply_language and reply_language != user_language:
+            log.info(
+                "Bot #%d: reply lang '%s' != question lang '%s' -> translating",
+                bot_row["id"], reply_language, user_language,
+            )
+            # keep the typing indicator alive during translation too
+            typing_task2 = asyncio.create_task(_typing_loop(bot, message.chat.id, bc_id))
+            try:
+                translated = await translate_text(reply, user_language)
+            finally:
+                typing_task2.cancel()
+                try:
+                    await typing_task2
+                except (asyncio.CancelledError, Exception):
+                    pass
+            if translated and translated.strip():
+                reply = translated.strip()
 
     if is_pro:
         key = (bot_row["id"], message.chat.id)
