@@ -1,4 +1,6 @@
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from urllib.parse import quote
+
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from . import config, texts
@@ -23,26 +25,64 @@ def main_menu(has_bots: bool, can_create: bool, is_admin: bool = False) -> Inlin
     return kb.as_markup()
 
 
-def create_bot_intro_keyboard() -> InlineKeyboardMarkup:
+def create_bot_intro_keyboard(mother_username: str | None = None) -> InlineKeyboardMarkup:
     """Intro screen for the modern create-bot flow.
 
-    When ``CREATE_BOT_WEBAPP_URL`` is configured, the button opens the Mini App
-    (the native-looking modal from the screenshot). When it is not configured,
-    we fall back to an in-chat name -> username -> token flow that still uses
-    the new modern UX (same validation, same Persian instructions).
+    The primary button opens Telegram's NATIVE "Create Bot" modal via the
+    ``https://t.me/newbot/{mother_username}/...`` deep link (the screenshot
+    you sent). Requires the mother bot to have "Bot Management Mode" enabled
+    in @BotFather. The fallback "manual token" button triggers the old
+    in-chat token flow when the native modal isn't available.
     """
     kb = InlineKeyboardBuilder()
-    if config.CREATE_BOT_WEBAPP_URL:
-        kb.button(
-            text=texts.CREATE_BOT_OPEN_WEBAPP_BTN,
-            web_app=WebAppInfo(url=config.CREATE_BOT_WEBAPP_URL),
-        )
+    if mother_username:
+        url = build_newbot_link(mother_username)
+        kb.button(text=texts.CREATE_BOT_OPEN_BTN, url=url)
     else:
-        # fallback: enter name directly in chat
-        kb.button(text=texts.CREATE_BOT_OPEN_WEBAPP_BTN, callback_data="bot:create:form")
+        # mother bot's username not known yet -> skip native button, go
+        # straight to the manual flow so the user is never stuck
+        kb.button(text=texts.CREATE_BOT_TOKEN_FALLBACK_BTN, callback_data="bot:create:token")
+    if config.CREATE_BOT_SHOW_TOKEN_FALLBACK:
+        kb.button(text=texts.CREATE_BOT_TOKEN_FALLBACK_BTN, callback_data="bot:create:token")
     kb.button(text="🔙 منوی اصلی", callback_data="menu:main")
     kb.adjust(1)
     return kb.as_markup()
+
+
+def create_bot_native_keyboard(
+    mother_username: str, suggested_username: str, suggested_name: str
+) -> InlineKeyboardMarkup:
+    """Button that opens the native Create-Bot modal with prefilled values."""
+    kb = InlineKeyboardBuilder()
+    url = build_newbot_link(mother_username, suggested_username, suggested_name)
+    kb.button(text=texts.CREATE_BOT_OPEN_BTN, url=url)
+    if config.CREATE_BOT_SHOW_TOKEN_FALLBACK:
+        kb.button(text=texts.CREATE_BOT_TOKEN_FALLBACK_BTN, callback_data="bot:create:token")
+    kb.button(text="🔙 منوی اصلی", callback_data="menu:main")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def build_newbot_link(
+    mother_username: str,
+    suggested_username: str | None = None,
+    suggested_name: str | None = None,
+) -> str:
+    """Build the native Telegram "create managed bot" deep link.
+
+    Format: ``https://t.me/newbot/{manager_username}/{new_username}?name={name}``
+    Both the username (path) and the name (query) are optional suggestions that
+    are pre-filled but editable inside the native modal.
+    """
+    mother = mother_username.lstrip("@")
+    if not suggested_username:
+        # generic placeholder; the user edits it inside the native modal
+        suggested_username = "MyBot_bot"
+    suggested_username = suggested_username.lstrip("@")
+    link = f"https://t.me/newbot/{mother}/{suggested_username}"
+    if suggested_name:
+        link += f"?name={quote(suggested_name)}"
+    return link
 
 
 def support_keyboard() -> InlineKeyboardMarkup:
@@ -51,9 +91,6 @@ def support_keyboard() -> InlineKeyboardMarkup:
     if config.SUPPORT_USERNAME:
         url = f"https://t.me/{config.SUPPORT_USERNAME}"
     elif config.ADMIN_ID:
-        # no username configured — use the tg:// deep link by numeric id
-        # (only works if the user has a public username or shares contact; the
-        #  button label still makes the intent clear)
         url = f"https://t.me/share/url?url=پشتیبانی&text=سلام،%20نیاز%20به%20پشتیبانی%20دارم"
     else:
         url = "https://t.me"

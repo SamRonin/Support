@@ -168,3 +168,38 @@ async def notify_user(user_id: int, text: str) -> None:
         await _mother_bot.send_message(user_id, text, disable_web_page_preview=True)
     except Exception:
         pass
+
+
+async def bootstrap_mother() -> str | None:
+    """Fetch and cache the mother bot's own @username.
+
+    The native "Create Bot" deep link (``https://t.me/newbot/{mother_username}``)
+    needs the mother bot's username. We fetch it once at startup via ``getMe``
+    and store it in ``config.MOTHER_BOT_USERNAME`` so the create-bot handler
+    can build the link without an extra API call per user.
+
+    Returns the username (without @) or None on failure.
+    """
+    global _mother_bot
+    if not config.BOT_TOKEN:
+        return None
+    try:
+        if _mother_bot is None:
+            _mother_bot = Bot(
+                token=config.BOT_TOKEN,
+                default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+            )
+        me = await _mother_bot.get_me()
+        username = (me.username or "").strip()
+        if username:
+            config.MOTHER_BOT_USERNAME = username
+            log.info("Mother bot username cached: @%s", username)
+            return username
+    except Exception as e:
+        log.warning("could not fetch mother bot username: %r", e)
+    return None
+
+
+def get_mother_bot() -> Bot | None:
+    """Return the cached mother Bot instance (or None)."""
+    return _mother_bot

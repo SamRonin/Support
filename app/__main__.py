@@ -57,6 +57,10 @@ async def main() -> None:
     )
     dp = build_mother_dispatcher()
 
+    # cache the mother bot's own @username (needed for the native Create-Bot
+    # deep link https://t.me/newbot/{mother_username}/...)
+    await manager.bootstrap_mother()
+
     # start all registered child bots
     await manager.start_all()
 
@@ -64,7 +68,8 @@ async def main() -> None:
     try:
         await dp.start_polling(
             bot,
-            allowed_updates=["message", "callback_query", "web_app_data"],
+            # "managed_bot" delivers the native Create-Bot confirmation
+            allowed_updates=["message", "callback_query", "managed_bot"],
         )
     finally:
         log.info("Shutting down: stopping child bots...")

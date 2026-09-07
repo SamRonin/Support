@@ -35,12 +35,22 @@ REFERRAL_REWARD_DAYS = _int_env("REFERRAL_REWARD_DAYS", 10)
 # When empty, the button falls back to a deep link with the numeric ADMIN_ID.
 SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "").strip().lstrip("@")
 
-# --- Modern bot-creation Mini App (Task 3) --------------------------------
-# Public HTTPS URL where the create-bot Mini App HTML is hosted.
-# Set this in your env, e.g.  CREATE_BOT_WEBAPP_URL=https://your-domain.com/create_bot.html
-# When left empty, the bot falls back to a clean in-chat name/username form
-# (still the new modern flow — just without opening a Mini App).
-CREATE_BOT_WEBAPP_URL = os.getenv("CREATE_BOT_WEBAPP_URL", "").strip()
+# --- Modern bot-creation: Managed Bots (Task 3) ---------------------------
+# Telegram's native "Create Bot" modal (the screenshot you sent) is triggered
+# by opening a link of the form:
+#     https://t.me/newbot/{mother_bot_username}/{suggested_username}?name={name}
+# This requires the mother bot to have "Bot Management Mode" enabled in
+# @BotFather (one-time setup). When the user confirms the modal, Telegram
+# sends a `managed_bot` update to the mother bot, which then calls
+# getManagedBotToken() to fetch the new bot's token and starts polling it.
+#
+# The mother bot's own @username is fetched automatically at startup
+# (see app/child/manager.py) and cached here; no env var needed.
+MOTHER_BOT_USERNAME: str = ""  # set at startup by manager.bootstrap_mother()
+
+# When True, the "manual token" fallback button is also offered alongside the
+# native Create-Bot button. Useful while Bot Management Mode isn't enabled yet.
+CREATE_BOT_SHOW_TOKEN_FALLBACK = _bool_env("CREATE_BOT_SHOW_TOKEN_FALLBACK", True)
 
 # Plans -------------------------------------------------------------------
 FREE_MAX_BOTS = 1
